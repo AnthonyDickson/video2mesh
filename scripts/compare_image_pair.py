@@ -17,13 +17,13 @@
 #  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 import warnings
-from argparse import Namespace, ArgumentParser
+from argparse import ArgumentParser, Namespace
 
 import cv2
 import numpy as np
 import torch
 from lpips import LPIPS
-from skimage.metrics import structural_similarity, peak_signal_noise_ratio
+from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 
 
 def measure_lpips(reference_image, comparison_image, lpips_fn):
@@ -41,7 +41,14 @@ def measure_lpips(reference_image, comparison_image, lpips_fn):
         return lpips_fn.forward(reference_image, comparison_image).item()
 
 
-def mifd(label: np.ndarray, output: np.ndarray, ratio_threshold=0.7, k=2, min_matches=1, log_residual=False):
+def mifd(
+    label: np.ndarray,
+    output: np.ndarray,
+    ratio_threshold=0.7,
+    k=2,
+    min_matches=1,
+    log_residual=False,
+):
     """
     Calculate the MIFD (Mean Image Feature Distance) metric between two grayscale images.
 
@@ -62,13 +69,15 @@ def mifd(label: np.ndarray, output: np.ndarray, ratio_threshold=0.7, k=2, min_ma
     # -- Step 2: Matching descriptor vectors with a FLANN based matcher
     if descriptors1 is None or descriptors2 is None:
         warnings.warn(
-            f"Could not extract any features for at least one image in the pair.")
-        return float('nan')
+            f"Could not extract any features for at least one image in the pair."
+        )
+        return float("nan")
 
     if len(descriptors1) < k or len(descriptors2) < k:
         warnings.warn(
-            f"Not enough descriptors for k={k:d}, only got {len(descriptors1):,d} and {len(descriptors2):,d}.")
-        return float('nan')
+            f"Not enough descriptors for k={k:d}, only got {len(descriptors1):,d} and {len(descriptors2):,d}."
+        )
+        return float("nan")
 
     # Since SURF is a floating-point descriptor NORM_L2 is used
     matcher = cv2.DescriptorMatcher_create(cv2.DescriptorMatcher_FLANNBASED)
@@ -83,8 +92,10 @@ def mifd(label: np.ndarray, output: np.ndarray, ratio_threshold=0.7, k=2, min_ma
             points2.append(key_points2[m.trainIdx].pt)
 
     if len(points1) < min_matches:
-        warnings.warn(f"Not enough matches for `min_matches={min_matches}`, only got {len(points1)}.")
-        return float('nan')
+        warnings.warn(
+            f"Not enough matches for `min_matches={min_matches}`, only got {len(points1)}."
+        )
+        return float("nan")
 
     if log_residual:
         residuals = np.log10(points1) - np.log10(points2)
@@ -94,13 +105,17 @@ def mifd(label: np.ndarray, output: np.ndarray, ratio_threshold=0.7, k=2, min_ma
     try:
         return np.mean(np.sqrt(np.sum(np.square(residuals), axis=1)))
     except np.AxisError:  # No matches means axis 1 will be out of bounds.
-        return float('nan')
-    
+        return float("nan")
+
 
 def get_arguments() -> Namespace:
     parser = ArgumentParser()
-    parser.add_argument('--ref_image', type=str, help='The path to the reference image.')
-    parser.add_argument('--est_image', type=str, help='The path to the estimated image.')
+    parser.add_argument(
+        "--ref_image", type=str, help="The path to the reference image."
+    )
+    parser.add_argument(
+        "--est_image", type=str, help="The path to the estimated image."
+    )
 
     args = parser.parse_args()
 
@@ -123,7 +138,7 @@ def compare_images(ref_image, est_image, lpips_fn=None, return_mifd=False):
     ssim_score = structural_similarity(ref_gray, est_gray, win_size=7)
     psnr_score = peak_signal_noise_ratio(ref_gray, est_gray)
 
-    lpips_fn = LPIPS(net='alex') if lpips_fn is None else lpips_fn
+    lpips_fn = LPIPS(net="alex") if lpips_fn is None else lpips_fn
     lpips_score = measure_lpips(ref_image, est_image, lpips_fn)
 
     if return_mifd:
@@ -136,11 +151,15 @@ def compare_images(ref_image, est_image, lpips_fn=None, return_mifd=False):
 def main(ref_image: str, est_image: str):
     ref_image = cv2.imread(ref_image)
     est_image = cv2.imread(est_image)
-    lpips_fn = LPIPS(net='alex')
-    ssim_score, psnr_score, lpips_score, mifd_score = compare_images(ref_image, est_image, lpips_fn)
-    print(f"SSIM: {ssim_score:,.3f} - PSNR: {psnr_score:,.1f} dB - LPIPS: {lpips_score:,.3f} - MIFD: {mifd_score:,.1f}")
+    lpips_fn = LPIPS(net="alex")
+    ssim_score, psnr_score, lpips_score, mifd_score = compare_images(
+        ref_image, est_image, lpips_fn, return_mifd=True
+    )
+    print(
+        f"SSIM: {ssim_score:,.3f} - PSNR: {psnr_score:,.1f} dB - LPIPS: {lpips_score:,.3f} - MIFD: {mifd_score:,.1f}"
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     args = get_arguments()
     main(ref_image=args.ref_image, est_image=args.est_image)

@@ -6,5 +6,6 @@ weights/
 checkpoints/
 experiment_results/
 *.log
-hive/__pycache__
+__pycache__/
 third_party/webxr3dvideo/docs/video/
+.venv
