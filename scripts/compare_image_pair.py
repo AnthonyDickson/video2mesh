@@ -23,6 +23,7 @@ import cv2
 import numpy as np
 import torch
 from lpips import LPIPS
+from pytorch_msssim import MS_SSIM, SSIM
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 
 
@@ -108,35 +109,38 @@ def mifd(
         return float("nan")
 
 
-def get_arguments() -> Namespace:
-    parser = ArgumentParser()
-    parser.add_argument(
-        "--ref_image", type=str, help="The path to the reference image."
-    )
-    parser.add_argument(
-        "--est_image", type=str, help="The path to the estimated image."
-    )
-
-    args = parser.parse_args()
-
-    return args
-
-
-def compare_images(ref_image, est_image, lpips_fn=None, return_mifd=False):
+def compare_images(
+    ref_image, est_image, lpips_fn=None, ssim_fn=None, return_mifd=False
+):
     """
     Calculate image similarity between two images.
 
     :param ref_image: An image loaded via OpenCV (`cv2.imread`) to compare against.
     :param est_image: An image loaded via OpenCV (`cv2.imread`) to compare against the reference image.
     :param lpips_fn: The LPIPS function to use. If `None`, the default LPIPS function is used (AlexNet).
+    :param ssim_fn: The SSIM function to use. If `None`, scikit-learn's function is used.
+        The function should take a single channel image.
     :param return_mifd: Whether to calculate and return the MIFD metric.
     :return: A 4-tuple containing the structural similarity, peak-signal-to-noise ratio, LPIPS and (optionally) the MIFD scores.
     """
     ref_gray = cv2.cvtColor(ref_image, cv2.COLOR_BGR2GRAY)
     est_gray = cv2.cvtColor(est_image, cv2.COLOR_BGR2GRAY)
 
-    ssim_score = structural_similarity(ref_gray, est_gray, win_size=7)
     psnr_score = peak_signal_noise_ratio(ref_gray, est_gray)
+
+    if ssim_fn:
+        height, width = ref_gray.shape
+
+        ref_torch = torch.from_numpy(
+            ref_gray.astype(float).reshape((1, 1, height, width))
+        )
+        est_torch = torch.from_numpy(
+            est_gray.astype(float).reshape((1, 1, height, width))
+        )
+
+        ssim_score = ssim_fn(ref_torch, est_torch)
+    else:
+        ssim_score = structural_similarity(ref_gray, est_gray, win_size=7)
 
     lpips_fn = LPIPS(net="alex") if lpips_fn is None else lpips_fn
     lpips_score = measure_lpips(ref_image, est_image, lpips_fn)
@@ -148,18 +152,44 @@ def compare_images(ref_image, est_image, lpips_fn=None, return_mifd=False):
         return ssim_score, psnr_score, lpips_score
 
 
-def main(ref_image: str, est_image: str):
+def get_arguments() -> Namespace:
+    parser = ArgumentParser()
+    parser.add_argument(
+        "--ref_image", type=str, help="The path to the reference image."
+    )
+    parser.add_argument(
+        "--est_image", type=str, help="The path to the estimated image."
+    )
+    parser.add_argument(
+        "--ms_ssim", action="store_true", help="Use MS-SSIM instead of SSIM."
+    )
+
+    args = parser.parse_args()
+
+    return args
+
+
+def main(ref_image: str, est_image: str, use_ms_ssim: bool):
     ref_image = cv2.imread(ref_image)
     est_image = cv2.imread(est_image)
     lpips_fn = LPIPS(net="alex")
+
+    if use_ms_ssim:
+        ssim_fn = MS_SSIM(data_range=255, size_average=True, channel=1)
+        ssim_label = "MS-SSIM"
+    else:
+        ssim_fn = SSIM(data_range=255, size_average=True, channel=1)
+        ssim_label = "SSIM"
+
     ssim_score, psnr_score, lpips_score, mifd_score = compare_images(
-        ref_image, est_image, lpips_fn, return_mifd=True
+        ref_image, est_image, lpips_fn, ssim_fn=ssim_fn, return_mifd=True
     )
+
     print(
-        f"SSIM: {ssim_score:,.3f} - PSNR: {psnr_score:,.1f} dB - LPIPS: {lpips_score:,.3f} - MIFD: {mifd_score:,.1f}"
+        f"{ssim_label}: {ssim_score:,.3f} - PSNR: {psnr_score:,.1f} dB - LPIPS: {lpips_score:,.3f} - MIFD: {mifd_score:,.1f}"
     )
 
 
 if __name__ == "__main__":
     args = get_arguments()
-    main(ref_image=args.ref_image, est_image=args.est_image)
+    main(ref_image=args.ref_image, est_image=args.est_image, use_ms_ssim=args.ms_ssim)
